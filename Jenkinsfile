@@ -13,7 +13,6 @@ pipeline {
         NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
         MAX_BUILDS_TO_KEEP = 5
         MVN_CMD = '/opt/maven/bin/mvn'
-        SONAR_PROJECT_PREFIX = 'assignment'
     }
 
     stages {
@@ -26,7 +25,7 @@ pipeline {
         stage('Create Sonar Project') {
             steps {
                 script {
-                    def projectName = "${SONAR_PROJECT_PREFIX}-${env.BUILD_NUMBER}"
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -41,13 +40,12 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    def projectName = "${SONAR_PROJECT_PREFIX}-${env.BUILD_NUMBER}"
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
                                 ${MVN_CMD} clean verify sonar:sonar \
                                 -Dsonar.projectKey=${projectName} \
-                                -Dsonar.projectName=${projectName} \
                                 -Dsonar.host.url=${SONAR_URL} \
                                 -Dsonar.token=${SONAR_TOKEN}
                             """
@@ -60,7 +58,7 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    def artifactName = "my-app-${BUILD_NUMBER}.jar"
+                    def artifactName = "my-app-${env.BUILD_NUMBER}.jar"
                     sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
@@ -74,14 +72,14 @@ pipeline {
         stage('Upload to Nexus') {
             steps {
                 script {
-                    def version = "1.0.${BUILD_NUMBER}"
+                    def version = "1.0.${env.BUILD_NUMBER}"
                     def artifactId = "my-app"
                     def groupPath = "com/mycompany/app"
                     def finalArtifact = "${artifactId}-${version}.jar"
                     def uploadPath = "${groupPath}/${artifactId}/${version}"
 
                     sh """
-                        mv tagged-artifacts/my-app-${BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}
+                        mv tagged-artifacts/my-app-${env.BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}
                     """
 
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
@@ -112,7 +110,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${BUILD_NUMBER}"
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.BUILD_NUMBER}"
                     sh "docker build -t ${imageTag} ."
                 }
             }
@@ -121,7 +119,7 @@ pipeline {
         stage('Push Docker Image to Nexus') {
             steps {
                 script {
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${BUILD_NUMBER}"
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.BUILD_NUMBER}"
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
                             echo $PASSWORD | docker login http://${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
@@ -142,7 +140,7 @@ pipeline {
                     if (minBuildToKeep > 0) {
                         withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                             for (int i = 1; i <= minBuildToKeep; i++) {
-                                def oldProject = "${SONAR_PROJECT_PREFIX}-${i}"
+                                def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
                                 echo "Deleting old Sonar project: ${oldProject}"
                                 sh """
                                     curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
@@ -159,10 +157,7 @@ pipeline {
 
     post {
         always {
-            node {
-                cleanWs()
-            }
+            cleanWs()
         }
     }
 }
-
