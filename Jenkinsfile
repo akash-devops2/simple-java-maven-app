@@ -96,13 +96,14 @@ pipeline {
         stage('Create Dockerfile') {
             steps {
                 script {
+                    def jarName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     writeFile file: 'Dockerfile', text: """
                         FROM openjdk:21-jdk-slim
                         WORKDIR /app
-                        COPY tagged-artifacts/${env.JOB_NAME}-${env.BUILD_NUMBER}.jar app.jar
+                        COPY tagged-artifacts/${jarName}.jar app.jar
                         EXPOSE 8080
                         ENTRYPOINT ["java", "-jar", "app.jar"]
-                    """.replace('/', '-')
+                    """
                 }
             }
         }
@@ -157,3 +158,7 @@ pipeline {
 
     post {
         always {
+            cleanWs()
+        }
+    }
+}
