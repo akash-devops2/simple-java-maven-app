@@ -16,6 +16,14 @@ pipeline {
     }
 
     stages {
+        stage('Debug Build Info') {
+            steps {
+                echo "📦 JOB_NAME: ${env.JOB_NAME}"
+                echo "📦 BUILD_NUMBER: ${env.BUILD_NUMBER}"
+                echo "📦 Project Key: ${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+            }
+        }
+
         stage('Checkout') {
             steps {
                 git url: "${GIT_REPO_URL}", branch: 'main'
@@ -58,7 +66,7 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    def artifactName = "my-app-${env.BUILD_NUMBER}.jar"
                     sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
@@ -73,12 +81,12 @@ pipeline {
             steps {
                 script {
                     def version = "1.0.${env.BUILD_NUMBER}"
-                    def artifactId = "${env.JOB_NAME}".replace('/', '-')
                     def groupPath = "com/mycompany/app"
+                    def artifactId = "my-app"
                     def finalArtifact = "${artifactId}-${version}.jar"
                     def uploadPath = "${groupPath}/${artifactId}/${version}"
 
-                    sh "mv tagged-artifacts/${artifactId}-${env.BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}"
+                    sh "mv tagged-artifacts/my-app-${env.BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}"
 
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
@@ -95,7 +103,7 @@ pipeline {
             steps {
                 script {
                     def version = "1.0.${env.BUILD_NUMBER}"
-                    def artifactName = "${env.JOB_NAME}-${version}.jar".replace('/', '-')
+                    def artifactName = "my-app-${version}.jar"
                     writeFile file: 'Dockerfile', text: """
                         FROM openjdk:21-jdk-slim
                         WORKDIR /app
@@ -110,8 +118,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.BUILD_NUMBER}"
                     sh "docker build -t ${imageTag} ."
                 }
             }
@@ -120,8 +127,7 @@ pipeline {
         stage('Push Docker Image to Nexus') {
             steps {
                 script {
-                    def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.BUILD_NUMBER}"
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
                             echo $PASSWORD | docker login ${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
@@ -144,11 +150,14 @@ pipeline {
                             for (int i = 1; i <= minBuildToKeep; i++) {
                                 def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
                                 echo "🧹 Deleting old Sonar project: ${oldProject}"
-                                sh """
-                                    curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
-                                    "${SONAR_URL}/api/projects/delete" \
-                                    -d "project=${oldProject}" || true
-                                """
+
+                                def response = sh(
+                                    script: """curl -s -w "\\nStatus: %{http_code}\\n" -u $SONAR_TOKEN: -X POST \
+                                        "${SONAR_URL}/api/projects/delete" -d "project=${oldProject}" """,
+                                    returnStdout: true
+                                ).trim()
+
+                                echo "📋 SonarQube response:\n${response}"
                             }
                         }
                     }
