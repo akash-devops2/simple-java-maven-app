@@ -50,7 +50,6 @@ pipeline {
                                 -Dsonar.projectName=${projectName} \
                                 -Dsonar.host.url=${SONAR_URL} \
                                 -Dsonar.token=${SONAR_TOKEN} \
-                                -Dsonar.branch.name=main
                             """
                         }
                     }
