@@ -18,10 +18,6 @@ pipeline {
         MVN_CMD = '/opt/maven/bin/mvn'
     }
 
-    tools {
-        maven 'maven-3.9.10'
-    }
-
     stages {
         stage('Checkout') {
             steps {
