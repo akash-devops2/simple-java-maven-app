@@ -47,7 +47,7 @@ pipeline {
                                 ${MVN_CMD} clean verify sonar:sonar \\
                                 -Dsonar.projectKey=${projectName} \\
                                 -Dsonar.host.url=${SONAR_URL} \\
-                                -Dsonar.login=${SONAR_TOKEN}
+                                -Dsonar.token=${SONAR_TOKEN}
                             """
                         }
                     }
@@ -147,22 +147,23 @@ pipeline {
                             return
                         }
 
-                        def parsedJson = readJSON text: json
-                        def projects = parsedJson.components ?: []
+                        def parsed = readJSON text: json
+                        def matchedProjects = parsed.components.findAll {
+                            it.key.startsWith(projectPrefix) &&
+                            it.key.replace(projectPrefix, '').isInteger()
+                        }.sort { a, b ->
+                            def aNum = a.key.replace(projectPrefix, '').toInteger()
+                            def bNum = b.key.replace(projectPrefix, '').toInteger()
+                            bNum <=> aNum
+                        }
 
-                        if (projects.size() > MAX_BUILDS_TO_KEEP.toInteger()) {
-                            // Sort projects by key number descending
-                            def sortedProjects = projects.findAll {
-                                it.key.startsWith(projectPrefix) && it.key.replace(projectPrefix, '').isInteger()
-                            }.sort { a, b ->
-                                def aNum = a.key.replace(projectPrefix, '').toInteger()
-                                def bNum = b.key.replace(projectPrefix, '').toInteger()
-                                bNum <=> aNum
-                            }
+                        def totalProjects = matchedProjects.size()
+                        echo "Found ${totalProjects} matching SonarQube projects."
 
-                            def toDelete = sortedProjects.drop(MAX_BUILDS_TO_KEEP.toInteger())
+                        if (totalProjects > MAX_BUILDS_TO_KEEP.toInteger()) {
+                            def toDelete = matchedProjects.drop(MAX_BUILDS_TO_KEEP.toInteger())
                             toDelete.each { proj ->
-                                echo "🗑️ Deleting old SonarQube project: ${proj.key}"
+                                echo "🗑️ Deleting old Sonar project: ${proj.key}"
                                 def deleteResp = sh(script: """
                                     curl -s -w "\\nHTTP_STATUS_CODE:%{http_code}" \\
                                     -H "Authorization: Bearer ${SONAR_TOKEN}" \\
@@ -174,7 +175,7 @@ pipeline {
                                 echo "🔁 Deleted ${proj.key} with HTTP status: ${status}"
                             }
                         } else {
-                            echo "✅ No old SonarQube projects to delete. (${projects.size()} found)"
+                            echo "✅ No old SonarQube projects to delete. (${totalProjects} found)"
                         }
                     }
                 }
