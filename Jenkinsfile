@@ -25,7 +25,7 @@ pipeline {
         stage('Create Sonar Project') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${env.JOB_NAME}/${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -58,7 +58,7 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    def artifactName = "${env.JOB_NAME}/${env.BUILD_NUMBER}.jar".replace('/', '-')
                     sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
