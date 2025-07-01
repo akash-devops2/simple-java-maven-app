@@ -13,6 +13,7 @@ pipeline {
         NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
         MAX_BUILDS_TO_KEEP = 5
         MVN_CMD = '/opt/maven/bin/mvn'
+        SONAR_PROJECT_PREFIX = 'assignment'
     }
 
     stages {
@@ -25,7 +26,7 @@ pipeline {
         stage('Create Sonar Project') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${SONAR_PROJECT_PREFIX}-${env.BUILD_NUMBER}"
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -40,12 +41,13 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${SONAR_PROJECT_PREFIX}-${env.BUILD_NUMBER}"
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
                                 ${MVN_CMD} clean verify sonar:sonar \
                                 -Dsonar.projectKey=${projectName} \
+                                -Dsonar.projectName=${projectName} \
                                 -Dsonar.host.url=${SONAR_URL} \
                                 -Dsonar.token=${SONAR_TOKEN}
                             """
@@ -140,7 +142,7 @@ pipeline {
                     if (minBuildToKeep > 0) {
                         withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                             for (int i = 1; i <= minBuildToKeep; i++) {
-                                def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
+                                def oldProject = "${SONAR_PROJECT_PREFIX}-${i}"
                                 echo "Deleting old Sonar project: ${oldProject}"
                                 sh """
                                     curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
@@ -157,7 +159,9 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            node {
+                cleanWs()
+            }
         }
     }
 }
