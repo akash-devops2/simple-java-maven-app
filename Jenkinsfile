@@ -6,7 +6,7 @@ pipeline {
         PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
         GIT_REPO_URL = 'https://github.com/akash-devops2/simple-java-maven-app.git'
         SONAR_URL = 'http://3.108.250.202:30900'
-        SONAR_CRED_ID = 'sonar-token-id'
+        SONAR_CRED_ID = 'sonar-token-id'        
         NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases/'
         NEXUS_DOCKER_REPO = '3.108.250.202:30002'
         NEXUS_CRED_ID = 'nexus-creds'
@@ -134,20 +134,46 @@ pipeline {
         stage('Delete Old Sonar Projects') {
             steps {
                 script {
-                    def currentBuild = env.BUILD_NUMBER.toInteger()
-                    def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
+                    def projectPrefix = "${env.JOB_NAME}-".replace('/', '-')
 
-                    if (minBuildToKeep > 0) {
-                        withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
-                            for (int i = 1; i <= minBuildToKeep; i++) {
-                                def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
-                                echo "🗑️ Deleting old Sonar project: ${oldProject}"
-                                sh """
-                                    curl -s -o /dev/null -w "%{http_code}" -X POST \\
+                    withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
+                        def json = sh(script: """
+                            curl -s -H "Authorization: Bearer ${SONAR_TOKEN}" \\
+                            "${SONAR_URL}/api/projects/search?ps=500&q=${projectPrefix}"
+                        """, returnStdout: true).trim()
+
+                        if (!json || json == "{}") {
+                            echo "⚠️ No JSON data received from SonarQube API."
+                            return
+                        }
+
+                        def projectKeys = readJSON text: json
+
+                        def matchedProjects = projectKeys.components.findAll {
+                            it.key.startsWith(projectPrefix) && it.key.replace(projectPrefix, '').isInteger()
+                        }.sort { a, b ->
+                            def aNum = a.key.replace(projectPrefix, '').toInteger()
+                            def bNum = b.key.replace(projectPrefix, '').toInteger()
+                            bNum <=> aNum
+                        }
+
+                        if (matchedProjects.size() > MAX_BUILDS_TO_KEEP.toInteger()) {
+                            def toDelete = matchedProjects.drop(MAX_BUILDS_TO_KEEP.toInteger())
+
+                            toDelete.each { proj ->
+                                echo "🗑️ Deleting old Sonar project: ${proj.key}"
+                                def deleteResp = sh(script: """
+                                    curl -s -w "\\nHTTP_STATUS_CODE:%{http_code}" \\
                                     -H "Authorization: Bearer ${SONAR_TOKEN}" \\
-                                    "${SONAR_URL}/api/projects/delete?project=${oldProject}" || true
-                                """
+                                    -X POST "${SONAR_URL}/api/projects/delete?project=${proj.key}"
+                                """, returnStdout: true).trim()
+
+                                def parts = deleteResp.split('HTTP_STATUS_CODE:')
+                                def status = parts.length > 1 ? parts[1].trim() : "unknown"
+                                echo "🔁 Deleted ${proj.key} with HTTP status: ${status}"
                             }
+                        } else {
+                            echo "✅ No old SonarQube projects to delete. (${matchedProjects.size()} found)"
                         }
                     }
                 }
