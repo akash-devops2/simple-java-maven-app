@@ -28,8 +28,8 @@ pipeline {
                     def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
-                            curl -s -o /dev/null -w "%{http_code}" -X POST \
-                            -H "Authorization: Bearer ${SONAR_TOKEN}" \
+                            curl -s -o /dev/null -w "%{http_code}" -X POST \\
+                            -H "Authorization: Bearer ${SONAR_TOKEN}" \\
                             "${SONAR_URL}/api/projects/create?project=${projectName}&name=${projectName}" || true
                         """
                     }
@@ -44,9 +44,9 @@ pipeline {
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
-                                ${MVN_CMD} clean verify sonar:sonar \
-                                -Dsonar.projectKey=${projectName} \
-                                -Dsonar.host.url=${SONAR_URL} \
+                                ${MVN_CMD} clean verify sonar:sonar \\
+                                -Dsonar.projectKey=${projectName} \\
+                                -Dsonar.host.url=${SONAR_URL} \\
                                 -Dsonar.login=${SONAR_TOKEN}
                             """
                         }
@@ -84,8 +84,8 @@ pipeline {
 
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
-                            curl -u $USERNAME:$PASSWORD \
-                            --upload-file tagged-artifacts/${finalArtifact} \
+                            curl -u $USERNAME:$PASSWORD \\
+                            --upload-file tagged-artifacts/${finalArtifact} \\
                             ${NEXUS_URL}${uploadPath}/${finalArtifact}
                         """
                     }
@@ -138,14 +138,14 @@ pipeline {
                     def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
 
                     if (minBuildToKeep > 0) {
-                        withCredentials([usernamePassword(credentialsId: "${SONAR_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                             for (int i = 1; i <= minBuildToKeep; i++) {
                                 def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
                                 echo "Deleting old Sonar project: ${oldProject}"
                                 sh """
-                                    curl -s -o /dev/null -w "%{http_code}" -u $USERNAME:$PASSWORD -X POST \\
-                                    "${SONAR_URL}/api/projects/delete" \\
-                                    -d "project=${oldProject}" || true
+                                    curl -s -o /dev/null -w "%{http_code}" -X POST \\
+                                    -H "Authorization: Bearer ${SONAR_TOKEN}" \\
+                                    "${SONAR_URL}/api/projects/delete?project=${oldProject}" || true
                                 """
                             }
                         }
@@ -157,9 +157,7 @@ pipeline {
 
     post {
         always {
-            script {
-                cleanWs()
-            }
+            cleanWs()
         }
     }
 }
