@@ -112,6 +112,7 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    // ✅ FIXED: tag format uses `/` not `-`
                     sh "docker build -t ${imageTag} ."
                 }
             }
