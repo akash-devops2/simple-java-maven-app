@@ -2,31 +2,54 @@ pipeline {
     agent any
 
     environment {
-        SONARQUBE_SERVER = 'MySonar' // SonarQube Jenkins configuration name
-        MAVEN_HOME = tool 'Maven 3'
-        NEXUS_REPO = 'sample-releases'
-        NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases'
-        DOCKER_REGISTRY = '3.108.250.202:30002'
-        DOCKER_IMAGE_NAME = 'my-app'
+        JAVA_HOME = "/usr/lib/jvm/java-21-openjdk-amd64"
+        PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
+        GIT_REPO_URL = 'https://github.com/akash-devops2/simple-java-maven-app.git'
+        SONAR_URL = 'http://3.108.250.202:30900'
+        SONAR_CRED_ID = 'sonar-token-id'
+        NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases/'
+        NEXUS_DOCKER_REPO = '3.108.250.202:30002'
+        NEXUS_CRED_ID = 'nexus-creds'
+        NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
+        MAX_BUILDS_TO_KEEP = 5
+        MVN_CMD = '/opt/maven/bin/mvn'
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                git 'https://github.com/akash-devops2/sample-java-sonar-nexus.git'
+                git url: "${GIT_REPO_URL}", branch: 'main'
+            }
+        }
+
+        stage('Create Sonar Project') {
+            steps {
+                script {
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
+                        sh """
+                            curl -s -o /dev/null -w "%{http_code}" -X POST \
+                            -H "Authorization: Bearer ${SONAR_TOKEN}" \
+                            "${SONAR_URL}/api/projects/create?project=${projectName}&name=${projectName}" || true
+                        """
+                    }
+                }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                        sh """
-                            ${MAVEN_HOME}/bin/mvn clean verify sonar:sonar \
-                            -Dsonar.projectKey=assignment-${BUILD_NUMBER} \
-                            -Dsonar.host.url=http://3.108.250.202:30900 \
-                            -Dsonar.token=${SONAR_TOKEN}
-                        """
+                script {
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
+                        withSonarQubeEnv('MySonar') {
+                            sh """
+                                ${MVN_CMD} clean verify sonar:sonar \
+                                -Dsonar.projectKey=${projectName} \
+                                -Dsonar.host.url=${SONAR_URL} \
+                                -Dsonar.token=${SONAR_TOKEN}
+                            """
+                        }
                     }
                 }
             }
@@ -35,11 +58,12 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    sh "${MAVEN_HOME}/bin/mvn clean package"
+                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
-                        cp target/my-app-1.0-SNAPSHOT.jar tagged-artifacts/assignment-${BUILD_NUMBER}.jar
-                        echo ✅ Tagged JAR: assignment-${BUILD_NUMBER}.jar
+                        cp target/*.jar tagged-artifacts/${artifactName}
+                        echo "✅ Tagged JAR: ${artifactName}"
                     """
                 }
             }
@@ -48,12 +72,19 @@ pipeline {
         stage('Upload to Nexus') {
             steps {
                 script {
-                    def finalArtifact = "assignment-1.0.${BUILD_NUMBER}.jar"
-                    sh "mv tagged-artifacts/assignment-${BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}"
-                    withCredentials([usernamePassword(credentialsId: 'nexus-user', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    def version = "1.0.${env.BUILD_NUMBER}"
+                    def artifactId = "${env.JOB_NAME}".replace('/', '-')
+                    def groupPath = "com/mycompany/app"
+                    def finalArtifact = "${artifactId}-${version}.jar"
+                    def uploadPath = "${groupPath}/${artifactId}/${version}"
+
+                    sh "mv tagged-artifacts/${artifactId}-${env.BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}"
+
+                    withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
-                            curl -u $USERNAME:$PASSWORD --upload-file tagged-artifacts/${finalArtifact} \
-                            ${NEXUS_URL}/com/mycompany/app/assignment/1.0.${BUILD_NUMBER}/${finalArtifact}
+                            curl -u $USERNAME:$PASSWORD \
+                            --upload-file tagged-artifacts/${finalArtifact} \
+                            ${NEXUS_URL}${uploadPath}/${finalArtifact}
                         """
                     }
                 }
@@ -63,10 +94,13 @@ pipeline {
         stage('Create Dockerfile') {
             steps {
                 script {
+                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
                     writeFile file: 'Dockerfile', text: """
-                        FROM openjdk:17-jdk-slim
-                        COPY tagged-artifacts/assignment-${BUILD_NUMBER}.jar /app.jar
-                        ENTRYPOINT ["java", "-jar", "/app.jar"]
+                        FROM openjdk:21-jdk-slim
+                        WORKDIR /app
+                        COPY tagged-artifacts/${artifactName} app.jar
+                        EXPOSE 8080
+                        ENTRYPOINT ["java", "-jar", "app.jar"]
                     """
                 }
             }
@@ -75,21 +109,22 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def dockerTag = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:assignment-${BUILD_NUMBER}"
-                    sh "docker build -t ${dockerTag} ."
-                    echo "✅ Docker image built: ${dockerTag}"
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    sh "docker build -t ${imageTag} ."
                 }
             }
         }
 
         stage('Push Docker Image to Nexus') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus-docker-creds', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                    script {
-                        def dockerTag = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:assignment-${BUILD_NUMBER}"
-                        sh "echo $PASSWORD | docker login ${DOCKER_REGISTRY} -u $USERNAME --password-stdin"
-                        sh "docker push ${dockerTag}"
-                        echo "✅ Docker image pushed: ${dockerTag}"
+                script {
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        sh """
+                            echo $PASSWORD | docker login ${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
+                            docker push ${imageTag}
+                            docker logout ${NEXUS_DOCKER_REPO}
+                        """
                     }
                 }
             }
@@ -98,16 +133,21 @@ pipeline {
         stage('Delete Old Sonar Projects') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh """
-                            curl -s -u admin:${SONAR_TOKEN} 'http://3.108.250.202:30900/api/projects/search' | \
-                            jq -r '.components[] | select(.key | startswith("assignment-")) | .key' | \
-                            sort -r | tail -n +6 | \
-                            while read key; do
-                                curl -X POST -u admin:${SONAR_TOKEN} \
-                                "http://3.108.250.202:30900/api/projects/delete?project=\$key"
-                            done
-                        """
+                    def currentBuild = env.BUILD_NUMBER.toInteger()
+                    def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
+
+                    if (minBuildToKeep > 0) {
+                        withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
+                            for (int i = 1; i <= minBuildToKeep; i++) {
+                                def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
+                                echo "🧹 Deleting old Sonar project: ${oldProject}"
+                                sh """
+                                    curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
+                                    "${SONAR_URL}/api/projects/delete" \
+                                    -d "project=${oldProject}" || true
+                                """
+                            }
+                        }
                     }
                 }
             }
