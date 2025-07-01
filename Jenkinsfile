@@ -2,17 +2,17 @@ pipeline {
     agent any
 
     environment {
-        JAVA_HOME              = "/usr/lib/jvm/java-21-openjdk-amd64"
-        PATH                   = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
-        GIT_REPO_URL           = 'https://github.com/akash-devops2/simple-java-maven-app.git'
-        SONAR_URL              = 'http://3.108.250.202:30900'
-        SONAR_CRED_ID          = 'sonar-token-id'
-        NEXUS_URL              = 'http://3.108.250.202:30001/repository/sample-releases/'
-        NEXUS_DOCKER_REPO      = '3.108.250.202:30002'
-        NEXUS_CRED_ID          = 'nexus-creds'
-        NEXUS_DOCKER_CRED_ID   = 'nexus-docker-creds'
-        MAX_BUILDS_TO_KEEP     = 5
-        MVN_CMD                = '/opt/maven/bin/mvn'
+        JAVA_HOME = "/usr/lib/jvm/java-21-openjdk-amd64"
+        PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
+        GIT_REPO_URL = 'https://github.com/akash-devops2/simple-java-maven-app.git'
+        SONAR_URL = 'http://3.108.250.202:30900'
+        SONAR_CRED_ID = 'sonar-token-id'
+        NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases/'
+        NEXUS_DOCKER_REPO = '3.108.250.202:30002'
+        NEXUS_CRED_ID = 'nexus-creds'
+        NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
+        MAX_BUILDS_TO_KEEP = 5
+        MVN_CMD = '/opt/maven/bin/mvn'
     }
 
     stages {
@@ -58,12 +58,12 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    def jarName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
                     sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
-                        cp target/*.jar tagged-artifacts/${jarName}
-                        echo "✅ Tagged JAR: ${jarName}"
+                        cp target/*.jar tagged-artifacts/${artifactName}
+                        echo "✅ Tagged JAR: ${artifactName}"
                     """
                 }
             }
@@ -99,10 +99,10 @@ pipeline {
                     writeFile file: 'Dockerfile', text: """
                         FROM openjdk:21-jdk-slim
                         WORKDIR /app
-                        COPY tagged-artifacts/*.jar app.jar
+                        COPY tagged-artifacts/${env.JOB_NAME}-${env.BUILD_NUMBER}.jar app.jar
                         EXPOSE 8080
                         ENTRYPOINT ["java", "-jar", "app.jar"]
-                    """
+                    """.replace('/', '-')
                 }
             }
         }
@@ -141,7 +141,7 @@ pipeline {
                         withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                             for (int i = 1; i <= minBuildToKeep; i++) {
                                 def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
-                                echo "🗑️ Deleting old Sonar project: ${oldProject}"
+                                echo "🧹 Deleting old Sonar project: ${oldProject}"
                                 sh """
                                     curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
                                     "${SONAR_URL}/api/projects/delete" \
@@ -157,7 +157,3 @@ pipeline {
 
     post {
         always {
-            cleanWs()
-        }
-    }
-}
