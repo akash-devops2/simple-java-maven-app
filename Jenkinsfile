@@ -6,7 +6,7 @@ pipeline {
         PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
         GIT_REPO_URL = 'https://github.com/akash-devops2/simple-java-maven-app.git'
         SONAR_URL = 'http://3.108.250.202:30900'
-        SONAR_CRED_ID = 'sonar-token-id'        
+        SONAR_CRED_ID = 'sonar-token-id'
         NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases/'
         NEXUS_DOCKER_REPO = '3.108.250.202:30002'
         NEXUS_CRED_ID = 'nexus-creds'
@@ -157,7 +157,7 @@ pipeline {
                             bNum <=> aNum
                         }
 
-                        def totalProjects = matchedProjects.size()  // ✅ FIXED HERE
+                        def totalProjects = matchedProjects.size()  // ✅ FIXED
                         echo "Found ${totalProjects} matching SonarQube projects."
 
                         if (totalProjects > MAX_BUILDS_TO_KEEP.toInteger()) {
