@@ -40,7 +40,7 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${env.JOB_NAME}/${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
