@@ -25,7 +25,7 @@ pipeline {
         stage('Create Sonar Project') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}/${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -40,7 +40,7 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    def projectName = "${env.JOB_NAME}/${env.BUILD_NUMBER}".replace('/', '-')
+                    def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
@@ -58,7 +58,7 @@ pipeline {
         stage('Build and Tag Artifact') {
             steps {
                 script {
-                    def artifactName = "${env.JOB_NAME}/${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
                     sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
@@ -94,7 +94,8 @@ pipeline {
         stage('Create Dockerfile') {
             steps {
                 script {
-                    def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+                    def version = "1.0.${env.BUILD_NUMBER}"
+                    def artifactName = "${env.JOB_NAME}-${version}.jar".replace('/', '-')
                     writeFile file: 'Dockerfile', text: """
                         FROM openjdk:21-jdk-slim
                         WORKDIR /app
