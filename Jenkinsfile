@@ -106,54 +106,70 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}"  // only replace in tag part
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
-                    sh "docker build -t ${imageTag} ."
-                }
+stage('Build Docker Image') {
+    steps {
+        script {
+            def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+            def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
+            sh "docker build -t ${imageTag} ."
+        }
+    }
+}
+
+stage('Push Docker Image to Nexus') {
+    steps {
+        script {
+            def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+            def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
+            withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                sh """
+                    echo $PASSWORD | docker login ${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
+                    docker push ${imageTag}
+                    docker logout ${NEXUS_DOCKER_REPO}
+                """
             }
         }
+    }
+}
 
-        stage('Push Docker Image to Nexus') {
-            steps {
-                script {
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
-                    withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+stage('Delete Old Sonar Projects') {
+    steps {
+        script {
+            def currentBuild = env.BUILD_NUMBER.toInteger()
+            def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
+
+            if (minBuildToKeep > 0) {
+                withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
+                    for (int i = 1; i <= minBuildToKeep; i++) {
+                        def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
+                        echo "🧹 Deleting old Sonar project: ${oldProject}"
                         sh """
-                            echo $PASSWORD | docker login ${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
-                            docker push ${imageTag}
-                            docker logout ${NEXUS_DOCKER_REPO}
+                            curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
+                            "${SONAR_URL}/api/projects/delete" \
+                            -d "project=${oldProject}" || true
                         """
                     }
                 }
             }
         }
+    }
+}
 
-        stage('Delete Old Sonar Projects') {
-            steps {
-                script {
-                    def currentBuild = env.BUILD_NUMBER.toInteger()
-                    def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
-
-                    if (minBuildToKeep > 0) {
-                        withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
-                            for (int i = 1; i <= minBuildToKeep; i++) {
-                                def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
-                                echo "🧹 Deleting old Sonar project: ${oldProject}"
-                                sh """
-                                    curl -s -o /dev/null -u $SONAR_TOKEN: -X POST \
-                                    "${SONAR_URL}/api/projects/delete" \
-                                    -d "project=${oldProject}" || true
-                                """
-                            }
-                        }
-                    }
-                }
-            }
+stage('Create Dockerfile') {
+    steps {
+        script {
+            def artifactName = "${env.JOB_NAME}-${env.BUILD_NUMBER}.jar".replace('/', '-')
+            writeFile file: 'Dockerfile', text: """
+                FROM openjdk:21-jdk-slim
+                WORKDIR /app
+                COPY tagged-artifacts/${artifactName} app.jar
+                EXPOSE 8080
+                ENTRYPOINT ["java", "-jar", "app.jar"]
+            """
         }
     }
+}
+
 
     post {
         always {
