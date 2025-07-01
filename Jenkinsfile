@@ -109,7 +109,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
+                    def safeTag = "${env.JOB_NAME}-${env.BUILD_NUMBER}"  // only replace in tag part
+                    def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${safeTag}"
                     sh "docker build -t ${imageTag} ."
                 }
             }
