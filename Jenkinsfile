@@ -6,7 +6,7 @@ pipeline {
         PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
         GIT_REPO_URL = 'https://github.com/akash-devops2/simple-java-maven-app.git'
         SONAR_URL = 'http://3.108.250.202:30900'
-        SONAR_CRED_ID = 'sonar-token-id'
+        SONAR_CRED_ID = 'sonar-token-id'        // Secret Text with your token
         NEXUS_URL = 'http://3.108.250.202:30001/repository/sample-releases/'
         NEXUS_DOCKER_REPO = '3.108.250.202:30002'
         NEXUS_CRED_ID = 'nexus-creds'
@@ -28,8 +28,8 @@ pipeline {
                     def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
-                            curl -s -o /dev/null -w "%{http_code}" -X POST \\
-                            -H "Authorization: Bearer ${SONAR_TOKEN}" \\
+                            curl -s -X POST \
+                            -H "Authorization: Bearer ${SONAR_TOKEN}" \
                             "${SONAR_URL}/api/projects/create?project=${projectName}&name=${projectName}" || true
                         """
                     }
@@ -44,9 +44,9 @@ pipeline {
                     withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
-                                ${MVN_CMD} clean verify sonar:sonar \\
-                                -Dsonar.projectKey=${projectName} \\
-                                -Dsonar.host.url=${SONAR_URL} \\
+                                ${MVN_CMD} clean verify sonar:sonar \
+                                -Dsonar.projectKey=${projectName} \
+                                -Dsonar.host.url=${SONAR_URL} \
                                 -Dsonar.login=${SONAR_TOKEN}
                             """
                         }
@@ -84,8 +84,8 @@ pipeline {
 
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
-                            curl -u $USERNAME:$PASSWORD \\
-                            --upload-file tagged-artifacts/${finalArtifact} \\
+                            curl -u $USERNAME:$PASSWORD \
+                            --upload-file tagged-artifacts/${finalArtifact} \
                             ${NEXUS_URL}${uploadPath}/${finalArtifact}
                         """
                     }
@@ -143,8 +143,8 @@ pipeline {
                                 def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
                                 echo "Deleting old Sonar project: ${oldProject}"
                                 sh """
-                                    curl -s -o /dev/null -w "%{http_code}" -X POST \\
-                                    -H "Authorization: Bearer ${SONAR_TOKEN}" \\
+                                    curl -s -X POST \
+                                    -H "Authorization: Bearer ${SONAR_TOKEN}" \
                                     "${SONAR_URL}/api/projects/delete?project=${oldProject}" || true
                                 """
                             }
