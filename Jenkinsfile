@@ -147,21 +147,22 @@ pipeline {
                             return
                         }
 
-                        def projectKeys = readJSON text: json
+                        def parsedJson = readJSON text: json
+                        def projects = parsedJson.components ?: []
 
-                        def matchedProjects = projectKeys.components.findAll {
-                            it.key.startsWith(projectPrefix) && it.key.replace(projectPrefix, '').isInteger()
-                        }.sort { a, b ->
-                            def aNum = a.key.replace(projectPrefix, '').toInteger()
-                            def bNum = b.key.replace(projectPrefix, '').toInteger()
-                            bNum <=> aNum
-                        }
+                        if (projects.size() > MAX_BUILDS_TO_KEEP.toInteger()) {
+                            // Sort projects by key number descending
+                            def sortedProjects = projects.findAll {
+                                it.key.startsWith(projectPrefix) && it.key.replace(projectPrefix, '').isInteger()
+                            }.sort { a, b ->
+                                def aNum = a.key.replace(projectPrefix, '').toInteger()
+                                def bNum = b.key.replace(projectPrefix, '').toInteger()
+                                bNum <=> aNum
+                            }
 
-                        if (matchedProjects.size() > MAX_BUILDS_TO_KEEP.toInteger()) {
-                            def toDelete = matchedProjects.drop(MAX_BUILDS_TO_KEEP.toInteger())
-
+                            def toDelete = sortedProjects.drop(MAX_BUILDS_TO_KEEP.toInteger())
                             toDelete.each { proj ->
-                                echo "🗑️ Deleting old Sonar project: ${proj.key}"
+                                echo "🗑️ Deleting old SonarQube project: ${proj.key}"
                                 def deleteResp = sh(script: """
                                     curl -s -w "\\nHTTP_STATUS_CODE:%{http_code}" \\
                                     -H "Authorization: Bearer ${SONAR_TOKEN}" \\
@@ -173,7 +174,7 @@ pipeline {
                                 echo "🔁 Deleted ${proj.key} with HTTP status: ${status}"
                             }
                         } else {
-                            echo "✅ No old SonarQube projects to delete. (${matchedProjects.size()} found)"
+                            echo "✅ No old SonarQube projects to delete. (${projects.size()} found)"
                         }
                     }
                 }
