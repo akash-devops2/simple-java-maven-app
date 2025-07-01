@@ -157,7 +157,7 @@ pipeline {
                             bNum <=> aNum
                         }
 
-                        def totalProjects = matchedProjects.size()
+                        def totalProjects = matchedProjects.size  // ✅ FIXED HERE
                         echo "Found ${totalProjects} matching SonarQube projects."
 
                         if (totalProjects > MAX_BUILDS_TO_KEEP.toInteger()) {
